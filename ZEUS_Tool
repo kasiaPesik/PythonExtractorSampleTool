@@ -7,43 +7,35 @@ import customtkinter
 import pandas as pd
 import xlwings as xw
 
-# import openpyxl
-# import win32com.client as win32
-# import xlsxwriter
-# from openpyxl import Workbook
-# from openpyxl.worksheet.table import Table, TableStyleInfo
-# from openpyxl import load_workbook
 # =============== DATE ==============
 TodaysDate = time.strftime("%d-%m-%Y")
 
 # ============== File name ==========
 
 excelfilename = "output " + TodaysDate + ".xlsx"
-# ============== Variables ==========
+
 alias = os.getlogin()
-#current_dir = str(os.path.abspath(__file__))
-# Get the path to the directory where the Python script is located
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Change the current working directory to the script directory
 os.chdir(script_dir)
-# ============= Functionality ============
+# ============= Functions ============
      
 def rules():
     os.startfile(os.path.abspath('Rules.xlsx'))
     
 def dashboard():
-    os.startfile(r'\\ant\dept-eu\IAS2\RBS-RO-IAS2-NIS\RBS RO IS 2\AVS QA\Proactive Dashboard EU9\Proactive_dashboard_EU9.xlsx')
+    os.startfile(r'\.xlsx')
       
 def zeus_results():
     os.startfile(os.path.abspath('Zeus Results'))
     
 def open_zeus():
-    webbrowser.open('https://zeus-na.aka.amazon.com/login#/')
+    webbrowser.open('https://zeus.com/login#/')
  
 def upload_data():
     try:
-        dashboard_path = r'\\ant\dept-eu\IAS2\RBS-RO-IAS2-NIS\RBS RO IS 2\AVS QA\Proactive Dashboard EU9\Proactive_dashboard_EU9.xlsx'
+        dashboard_path = r'\.xlsx'
         output_path = askopenfilename(filetypes=[("Execl file", "*xls*")])
         
         if not output_path:
@@ -254,9 +246,6 @@ zeus_results_folder.pack(pady=10, padx=10)
 
 button_upload = customtkinter.CTkButton(master=frame_1, fg_color=("#00008B"), text="Upload data", command=upload_data) #command=button_callback
 button_upload.pack(pady=10, padx=10)
-# calendar
-# open_button = customtkinter.CTkButton(master=frame_1, text="Upload Zeus file", command=open_file) #, command=button_callback2
-# open_button.pack(pady=50, padx=10)
  
 dashboard_button = customtkinter.CTkButton(master=frame_1, text="Dashboard", fg_color=("#7393B3"), command=dashboard) #, command=button_callback2
 dashboard_button.pack(pady=10, padx=10)
