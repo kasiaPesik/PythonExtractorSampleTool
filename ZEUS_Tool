@@ -1,0 +1,268 @@
+import tkinter
+from tkinter.filedialog import askopenfilename
+import time
+import os
+import webbrowser
+import customtkinter
+import pandas as pd
+import xlwings as xw
+
+# import openpyxl
+# import win32com.client as win32
+# import xlsxwriter
+# from openpyxl import Workbook
+# from openpyxl.worksheet.table import Table, TableStyleInfo
+# from openpyxl import load_workbook
+# =============== DATE ==============
+TodaysDate = time.strftime("%d-%m-%Y")
+
+# ============== File name ==========
+
+excelfilename = "output " + TodaysDate + ".xlsx"
+# ============== Variables ==========
+alias = os.getlogin()
+#current_dir = str(os.path.abspath(__file__))
+# Get the path to the directory where the Python script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Change the current working directory to the script directory
+os.chdir(script_dir)
+# ============= Functionality ============
+     
+def rules():
+    os.startfile(os.path.abspath('Rules.xlsx'))
+    
+def dashboard():
+    os.startfile(r'\\ant\dept-eu\IAS2\RBS-RO-IAS2-NIS\RBS RO IS 2\AVS QA\Proactive Dashboard EU9\Proactive_dashboard_EU9.xlsx')
+      
+def zeus_results():
+    os.startfile(os.path.abspath('Zeus Results'))
+    
+def open_zeus():
+    webbrowser.open('https://zeus-na.aka.amazon.com/login#/')
+ 
+def upload_data():
+    try:
+        dashboard_path = r'\\ant\dept-eu\IAS2\RBS-RO-IAS2-NIS\RBS RO IS 2\AVS QA\Proactive Dashboard EU9\Proactive_dashboard_EU9.xlsx'
+        output_path = askopenfilename(filetypes=[("Execl file", "*xls*")])
+        
+        if not output_path:
+            tkinter.messagebox.showwarning(title="Warning", message="You did not select a file. The application will now close")
+        else:
+            app = xw.App(visible=False)
+            wb_output = xw.Book(output_path)
+            wb_dashboard = xw.Book(dashboard_path) 
+        
+            if wb_dashboard.app.api.Workbooks(wb_dashboard.name).ReadOnly:
+                # If the workbook is read-only, prompt the user to close it and try again
+                tkinter.messagebox.showwarning(title="Warning", message="The Dashboard is currently open. Please try again later.")
+                wb_dashboard.close()
+                wb_output.close()
+            elif wb_output.app.api.Workbooks(wb_output.name).ReadOnly:
+                tkinter.messagebox.showwarning(title="Warning", message="The output file is currently open. Please close output file and try again.")
+                wb_dashboard.close()
+                wb_output.close()
+            else:
+                ws_data = wb_output.sheets['Dashboard data']
+                last_row = ws_data.range('A1').end('down').row
+                last_column = ws_data.range('A1').end('right').column
+                data_range = ws_data.range((2, 1), (last_row, last_column))
+                new_data = data_range.options(header=False).value
+                ws_tracker = wb_dashboard.sheets['Tracker']
+
+            # Add the new data to the table on the protected sheet
+                if ws_tracker.api.ProtectContents:
+                    ws_tracker.api.Unprotect('myPassword')
+                # Determine the range where the data should be added
+                    last_row = ws_tracker.range('A1').end('down').row
+                    last_column = ws_tracker.range('A1').end('right').column
+                    range_to_add = ws_tracker.range((last_row+1, 1), (last_row+1+len(new_data)-1, last_column))
+                    range_to_add.value = new_data
+                    ws_tracker.api.Protect('myPassword')
+
+                # Loop through all pivot tables on the sheet and refresh them
+                for pt in ws_tracker.api.PivotTables():
+                    pt.RefreshTable()
+
+                # Save the changes to the Excel file and close the workbook
+                wb_dashboard.save()
+                wb_dashboard.close()
+                wb_output.close()
+                app.quit()
+                tkinter.messagebox.showinfo(title="Updated", message="Proactive results has been saved in the dashboard.")
+            
+    except Exception as e:
+        # Display the error message to the user using Tkinter messagebox
+        tkinter.messagebox.showerror('Error', str(e))
+      
+def run_automation():
+    try: 
+        if marketplace_selector.get() == "Select marketplace":
+            tkinter.messagebox.showwarning(title="Warning", message="Please select marketplace.")
+            return
+        elif len(entry_sample.get()) == 0:
+            tkinter.messagebox.showwarning(title="Warning", message="Sample size field is missing. Please add sample size.")
+            return
+        elif process_selector.get() == "Select process":
+            tkinter.messagebox.showwarning(title="Warning", message="Please select process.")
+            return
+        else:
+            mp = marketplace_selector.get()
+            sample_size = int(entry_sample.get())
+            process = process_selector.get()
+            
+            file_path = askopenfilename(filetypes=[("TSV Files", "*tsv")])
+
+            df = pd.read_table(file_path, sep='\\t', encoding="UTF-8", engine='python') #
+            df['context.marketplace_id'] = df['context.marketplace_id'] .astype(str)  
+            df = df[['context.marketplace_id', 'context.comments','context.year', 'context.action','context.asin', 'context.value', 'context.defect_type','context.upload_link',
+                    'lastActionedDate','assignedUser', 'context.product_family']]
+                                    
+            df_associates = pd.read_excel('Rules.xlsx', 'Associates')
+            associate_list = df_associates['Associates'].values.tolist()
+                                    
+            df_marketplace = pd.read_excel('Rules.xlsx', 'MP')
+            df_marketplace['context.marketplace_id'] = df_marketplace['context.marketplace_id'] .astype(str)
+
+            df_process = pd.read_excel('Rules.xlsx', 'Process_mapping')
+            
+            df_parameters = pd.read_excel('Rules.xlsx', sheet_name='Parameters')
+            validation_list = df_parameters['Parameters'].tolist()
+            
+            merged = pd.merge(df,df_process, on='context.product_family')
+            
+            merged_df = pd.merge(merged, df_marketplace, on ='context.marketplace_id')
+                                
+                                
+            df_filtered = merged_df.loc[(merged_df['assignedUser'].isin(associate_list)) & (merged_df['MP'] == mp) & (merged_df['Process'] == process) & (merged_df['context.action'] == 'Touched')]
+            df_count_all = df_filtered.groupby(['assignedUser','context.defect_type', 'context.product_family'])['context.asin'].count().reset_index(name="count_all")
+            
+            
+            def sample_2pct(group):
+                if sample_size == 50 and len(group) < 50:
+                    error_msg = "Sample size is greater than population size. Please select a smaller sample size and try again."
+                    tkinter.messagebox.showerror("Error", error_msg)
+                    raise ValueError(error_msg)
+                elif sample_size == 150 and len(group) < 150:
+                    error_msg = "Sample size is greater than population size. Please select a smaller sample size and try again."
+                    tkinter.messagebox.showerror("Error", error_msg)
+                    raise ValueError(error_msg)
+                elif sample_size > len(group):
+                    error_msg = "Sample size is greater than population size. Please select a smaller sample size and try again."
+                    tkinter.messagebox.showerror("Error", error_msg)
+                    raise ValueError(error_msg)
+                else:
+                    return group.sample(sample_size, replace=False)
+                # if sample_size == 50:
+                #     return group.sample(50)
+                # elif sample_size == 150:
+                #     return group.sample(150)
+                # else:
+                #     return group.sample(sample_size)
+                
+            df_done = df_filtered.groupby(['assignedUser', 'context.marketplace_id'], as_index=False, sort=True).apply(sample_2pct)
+            
+            df_done.rename(columns={'context.marketplace_id':'Marketplace ID', 'context.comments':'Comments',
+                                                    'context.year':'Year', 'context.action':'Action',
+                                                    'context.asin':'ASIN', 'context.value':'Value', 'context.defect_type':'Defect type','context.upload_link':'Proof',
+                                                    'lastActionedDate':'Date','assignedUser':'Associate', 'context.product_family': 'GL'}, inplace=True)
+                    
+
+            df_done['Asin marked'] = ""
+            df_done['Parameter marked'] = ""
+            df_done['QA comment'] = ""
+            df_done['Auditor'] = alias
+            df_done['QA Date'] = time.strftime("%d-%m-%Y")
+            df_done['Month'] = pd.to_datetime(df_done['Date']).dt.month.apply(lambda x: pd.datetime(2000, x, 1).strftime('%B'))
+            df_done['Week'] = pd.to_datetime(df_done['Date']).dt.isocalendar().week
+            df_done['Proof'] = df_done['Proof'].apply(lambda x: '=HYPERLINK("{0}","{0}")'.format(x))
+
+            df_done = df_done[['Process','ASIN', 'Defect type', 'MP', 'Marketplace ID', 'Action', 'Value', 'GL', 'Proof',
+                                      'Associate', 'Asin marked','Parameter marked', 'QA comment', 'Auditor', 'QA Date', 'Week', 'Month', 'Comments', 'Date', 'Year']]
+                                
+
+            df_count = df_done.groupby(['Associate','Defect type','GL'])['ASIN'].count().reset_index(name="count")
+
+            df_dashboard = df_done.merge(df_count, on=['Associate','Defect type', 'GL'], how='left')
+            df_dashboard = df_dashboard.drop(columns=['ASIN', 'Value','Action','Comments','Proof', 'Date', 'Marketplace ID'])
+            df_dashboard = df_dashboard.drop_duplicates()
+            
+
+            count_df = df_count_all.rename(columns={'assignedUser': 'Associate', 'context.defect_type':'Defect type', 'context.product_family':'GL'}) #, 
+            merged_df = pd.merge(df_dashboard, count_df, on=['Associate', 'Defect type', 'GL'], how='left')
+            merged_df = merged_df.rename(columns={'MP':'Marketplace', 'Associate':'User', 'Asin marked':'Nr of errors', 'QA comment':'Comment', 'Defect type': 'Task Type', 'count': 'Nr of asins audited', 'count_all': 'Nr of ASINs' })
+            merged_df['Task title'] = "ZEUS"
+            merged_df['Weekly score'] = ""
+            merged_df['Monthy score'] = ""
+            merged_df['Quarter'] = 'Q' + (((merged_df['Week'] -1) // 13) +1).astype(str)
+            merged_df['Task/Case ID'] = "ZEUS"
+            merged_df = merged_df[['Process', 'Task/Case ID', 'Task title', 'Task Type', 'Marketplace',	'Nr of asins audited', 'Nr of errors', 'Weekly score',	
+                                   'Monthy score', 'User', 'Auditor', 'Week', 'Month', 'Quarter', 'Year', 'QA Date', 'Parameter marked', 'Comment',	'Nr of ASINs', 'GL']]
+            try: 
+                with pd.ExcelWriter(r'Zeus results/' + excelfilename) as writer:  # pylint: disable=abstract-class-instantiated
+                    df_done.to_excel(writer, sheet_name='Sample',  index = False)
+                    merged_df.to_excel(writer, sheet_name='Dashboard data',  index = False)
+                if df_done.empty and df_dashboard.empty:
+                    tkinter.messagebox.showerror(title="No data", message=f"There is no results for {process} in {mp}.")
+                else:           
+                    tkinter.messagebox.showinfo(title="Completed", message="Done. You can start your audit.")            
+            except PermissionError:
+                tkinter.messagebox.showerror(title="Open file", message="Please close output file and try again.")
+    except Exception as e:
+    # Display the error message to the user using Tkinter messagebox
+        tkinter.messagebox.showerror('Error', str(e))           
+
+# ============== Application ============
+customtkinter.set_appearance_mode("light")  # Modes: "System" (standard), "Dark", "Light"
+#customtkinter.set_default_color_theme("white")  # Themes: "blue" (standard), "green", "dark-blue"
+
+app = customtkinter.CTk()
+app.geometry("400x700")
+app.title("Zeus")
+
+frame_1 = customtkinter.CTkFrame(master=app)
+frame_1.pack(pady=40, padx=60, fill="both", expand=True)
+
+frame_2 = customtkinter.CTkFrame(master=frame_1) 
+frame_2.pack(padx=40, expand=True) 
+
+label = customtkinter.CTkLabel(master=frame_2, text="Zeus automation", font=("Roboto", 24), justify=customtkinter.LEFT)
+label.pack(pady=10, padx=10)
+
+open_zeus_button = customtkinter.CTkButton(master=frame_2, text="Zeus", fg_color=("#00008B"), command=open_zeus) #, command=button_callback2
+open_zeus_button.pack(pady=10, padx=10)
+
+marketplace_selector = customtkinter.CTkOptionMenu(frame_2, values=["PL", "NL", "TR", "IT", "ES", "SE", "BE"], fg_color=("#7393B3", "#3B6064"))
+marketplace_selector.pack(pady=10, padx=10)
+marketplace_selector.set("Select marketplace") 
+
+process_selector = customtkinter.CTkOptionMenu(frame_2, values=["Proactive", "SL Proactive", "BV Proactive"], fg_color=("#7393B3", "#3B6064"))
+process_selector.pack(pady=10, padx=10)
+process_selector.set("Select process")
+
+label_2 = customtkinter.CTkLabel(master=frame_2, text="Sample size", font=("Roboto", 20), justify=customtkinter.LEFT)
+label_2.pack(pady=10, padx=10)
+
+entry_sample = customtkinter.CTkEntry(master=frame_2, placeholder_text="Enter a sample value")
+entry_sample.pack(pady=20, padx=10)
+
+button_run = customtkinter.CTkButton(master=frame_1, fg_color=("#00008B"), text="Run automation",  command=run_automation) #command=button_callback
+button_run.pack(pady=20, padx=10)
+
+zeus_results_folder = customtkinter.CTkButton(master=frame_1, text="Output", fg_color=("#7393B3"), command=zeus_results) #, command=button_callback2
+zeus_results_folder.pack(pady=10, padx=10)
+
+button_upload = customtkinter.CTkButton(master=frame_1, fg_color=("#00008B"), text="Upload data", command=upload_data) #command=button_callback
+button_upload.pack(pady=10, padx=10)
+# calendar
+# open_button = customtkinter.CTkButton(master=frame_1, text="Upload Zeus file", command=open_file) #, command=button_callback2
+# open_button.pack(pady=50, padx=10)
+ 
+dashboard_button = customtkinter.CTkButton(master=frame_1, text="Dashboard", fg_color=("#7393B3"), command=dashboard) #, command=button_callback2
+dashboard_button.pack(pady=10, padx=10)
+ 
+rules_button = customtkinter.CTkButton(master=frame_1, text="Rules", fg_color=("#7393B3"), command=rules) #, command=button_callback2
+rules_button.pack(pady=10, padx=10)
+        
+app.mainloop()
+
